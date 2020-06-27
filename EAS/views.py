@@ -2,13 +2,12 @@ from django.http import HttpResponse
 import json
 from django import forms
 from .models import *
-from django.contrib.auth.hashers import make_password
-from django.contrib.auth import authenticate
+from hashlib import sha1
 
 
 
 def index(request):
-    return HttpResponse("Hello, world. You're at the polls index.")
+    return HttpResponse("Hello, I am Jin Bao.")
 
 
 # 注册
@@ -20,6 +19,7 @@ def sign_up(request):
             username = form.data['username']
             password = form.data['password']
             identity = form.data['identity']
+            print(password)
         except:
             resp = {'Status': 'ERROR', 'detail': 'Valid form needed'}
             return HttpResponse(json.dumps(resp), content_type="application/json")
@@ -31,7 +31,7 @@ def sign_up(request):
         if User.objects.filter(username=username).count() != 0:
             resp = {'Status': 'ERROR', 'detail': 'Username has been used'}
             return HttpResponse(json.dumps(resp), content_type="application/json")
-        obj = User.objects.create(username=username, password=make_password(password), identity=identity)
+        obj = User.objects.create(username=username, password=sha1(password.encode('utf-8')).hexdigest(), identity=identity)
         obj.save()
 
         resp = {'Status': 'SUCCESS'}
@@ -49,6 +49,7 @@ def sign_in(request):
             form = forms.Form(request.POST)
             username = form.data['username']
             password = form.data['password']
+            print(password)
         except:
             resp = {'Status': 'ERROR', 'detail': 'Valid form needed'}
             return HttpResponse(json.dumps(resp), content_type="application/json")
@@ -60,7 +61,9 @@ def sign_in(request):
         user = User.objects.get(username=username)
 
         # 校验密码
-        if not user.check_password(password):
+        print(sha1(password.encode('utf-8')).hexdigest())
+        print(user.password)
+        if sha1(password.encode('utf-8')).hexdigest() != user.password:
             resp = {'Status': 'ERROR', 'detail': 'Wrong password'}
             return HttpResponse(json.dumps(resp), content_type="application/json")
 
@@ -89,9 +92,12 @@ def display(request):
 
     # 获取已修课程
     user = User.objects.get(username=username)
-    for i in user.learned_courses:
+    for i in user.learned_courses.all():
         resp.append({'learned_course':i.name})
 
+    # 获取已选课程
+    for i in user.chosen_courses.all():
+        resp.append({'chosen_course': i.name})
     return HttpResponse(json.dumps(resp), content_type="application/json")
 
 def pick(request):
@@ -120,12 +126,13 @@ def pick(request):
         if course.grade != user.grade:
             resp = {'Status': 'ERROR', 'detail': 'Grade doesnt match'}
             return HttpResponse(json.dumps(resp), content_type="application/json")
-        if not set(course.former) < set(user.learned_courses):
-            resp = {'Status': 'ERROR', 'detail': 'Learn former courses needed'}
-            return HttpResponse(json.dumps(resp), content_type="application/json")
+        if course.former:
+            if not set(course.former) < set(user.learned_courses.all()):
+                resp = {'Status': 'ERROR', 'detail': 'Learn former courses needed'}
+                return HttpResponse(json.dumps(resp), content_type="application/json")
 
         # 选课
-        user.learned_courses.add(course)
+        user.chosen_courses.add(course)
 
         resp = {'Status': 'SUCCESS'}
         return HttpResponse(json.dumps(resp), content_type="application/json")
@@ -153,12 +160,13 @@ def delete(request):
         user = User.objects.get(username=username)
 
         # 合法性检查
-        if user.learned_courses.filter(id=id).count() == 0:
+        if user.chosen_courses.filter(id=id).count() == 0:
             resp = {'Status': 'ERROR', 'detail': 'Havent picked the course'}
             return HttpResponse(json.dumps(resp), content_type="application/json")
 
         # 撤课
-        user.learned_courses.get(id=id).delete()
+        course = user.chosen_courses.get(id=id)
+        user.chosen_courses.remove(course)
 
         resp = {'Status': 'SUCCESS'}
         return HttpResponse(json.dumps(resp), content_type="application/json")
